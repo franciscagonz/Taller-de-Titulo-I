@@ -963,7 +963,7 @@ tab_tasaocupacion <- base_atraccion_completa %>%
 tabla_markdown_2 <- tab_tasaocupacion %>%
   kbl(format = "markdown")
 
-writeLines(tabla_markdown, "tab_tasaocupacion.md")
+writeLines(tabla_markdown_2, "tab_tasaocupacion.md")
 ```
 
 
