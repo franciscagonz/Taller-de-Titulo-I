@@ -1,8 +1,6 @@
 # Simple workflow for deploying static content to GitHub Pages
 name: Deploy static content to Pages
-uses: actions/upload-pages-artifact@v3
-# Upload entire repository
-   path: 'code'
+
 on:
   # Runs on pushes targeting the default branch
   push:
@@ -38,8 +36,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          # AQUÍ ES DONDE LE DECIMOS QUE APUNTE A TU CARPETA CODE
+          path: 'code'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
