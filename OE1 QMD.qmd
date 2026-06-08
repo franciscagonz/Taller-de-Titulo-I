@@ -1,7 +1,7 @@
 ---
 title: "Desarrollo análisis OE1: caracterización oferta académica"
 author: "Francisca González"
-format: html
+output: github_document
 editor: visual
 ---
 
@@ -220,11 +220,16 @@ tab_programasinteres <- fulldata %>%
   arrange(`categoría de interés`, `nombre institución`)
 
 
-# exportar tabla
+# exportar tabla en hmtl
 tab_programasinteres %>%
   kbl(format = "html") %>%
   kable_styling(bootstrap_options = c("striped", "hover")) %>%
   save_kable(file = "tabla_programas.html")
+
+# tabla formato md para que se pueda leer en github
+tabla_markdown <- tab_programasinteres %>%
+  kbl(format = "markdown")
+writeLines(tabla_markdown, "tabla_programas.md")
 
 # resultados selección
 count(fulldata, `categoría de interés` %in% c("Arquitectura", "Urbanismo", "Geografía", "Interdisciplina"))
@@ -811,5 +816,173 @@ ggplot(tendencia_regional_temporal_2125, aes(x = año, y = total_matricula, colo
   )
 
 ```
+
+#### 3.2 Análisis capacidad de atracción
+
+Primero, se creó una tabla para ver cuántas rows realmente entregan información -ya que, al observar de forma exploratoria la base de datos fulldata, hay muchos NA-.
+
+```{r, warning=FALSE}
+tabla_na_ocupacion <- fulldata %>%
+  mutate(
+    año_num = as.numeric(as.character(`año`))
+  ) %>%
+  filter(año_num >= 2016 & año_num <= 2025) %>%
+  group_by(año_num, `vigencia`) %>%
+  summarise(
+    total_observaciones = n(),
+    
+    # matricula primer año
+    mat_con_info = sum(!is.na(`total matrícula primer año`)),
+    mat_pct      = round((mat_con_info / total_observaciones) * 100, 1),
+    
+    # vacantes s1
+    vac1_con_info = sum(!is.na(`vacantes semestre uno`)),
+    vac1_pct      = round((vac1_con_info / total_observaciones) * 100, 1),
+    
+    # vacantes s2
+    vac2_con_info = sum(!is.na(`vacantes semestre dos`)),
+    vac2_pct      = round((vac2_con_info / total_observaciones) * 100, 1),
+    .groups = "drop"
+  ) %>%
+  
+  #porcentajes
+  mutate(
+    `%_mat_nuevo` = paste0(mat_pct, "%"),
+    `%_vac_s1`    = paste0(vac1_pct, "%"),
+    `%_vac_s2`    = paste0(vac2_pct, "%")
+  ) %>%
+  select(
+    año_num, 
+    `vigencia`, 
+    total_observaciones, 
+    mat_con_info, `%_mat_nuevo`,
+    vac1_con_info, `%_vac_s1`,
+    vac2_con_info, `%_vac_s2`
+  ) %>%
+  arrange(año_num, desc(total_observaciones))
+
+cat("\n====================================================================\n")
+cat("   AUDITORÍA DE RECOLECCIÓN: COBERTURA (%) Y VIGENCIA (2016-2025)\n")
+cat("====================================================================\n")
+print(tabla_na_ocupacion, n = Inf)
+```
+
+Considerando lo anterior, se ejecutó el siguiente chunk para generar el indicador de la tasa de ocupacion
+```{r, warning=FALSE}
+base_atraccion_completa <- fulldata %>%
+  mutate(
+    # transformar año para que el cod lo lea
+    año_num = as.numeric(as.character(`año`)),
+    
+    # asegurar compatibilidad de variables a usar
+    matricula_nuevo = as.numeric(as.character(`total matrícula primer año`)),
+    v1 = as.numeric(as.character(`vacantes semestre uno`)),
+    v2 = as.numeric(as.character(`vacantes semestre dos`))
+  ) %>%
+  filter(año_num >= 2016 & año_num <= 2025) %>%
+  # IMPORTANTE VARIBALE VIGENICA
+  filter(str_detect(tolower(`vigencia`), "vigente con estudiantes nuevos")) %>%
+  mutate(
+    matricula_nuevo = ifelse(is.na(matricula_nuevo), 0, matricula_nuevo),
+    v1 = ifelse(is.na(v1), 0, v1),
+    v2 = ifelse(is.na(v2), 0, v2),
+    total_vacantes_anual = v1 + v2
+  ) %>%
+  # cálculo de la tasa de ocupación individual por cada row
+  mutate(
+    tasa_ocupacion = ifelse(total_vacantes_anual > 0, round((matricula_nuevo / total_vacantes_anual) * 100, 1), 0)
+  )
+
+# por área
+tabla_historica_area <- base_atraccion_completa %>%
+  group_by(año_num, `categoría de interés`) %>%
+  summarise(
+    tasa_ocupacion_promedio = round(mean(tasa_ocupacion, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  select(año_num, `categoría de interés`, tasa_ocupacion_promedio) %>%
+  pivot_wider(names_from = año_num, values_from = tasa_ocupacion_promedio, values_fill = 0)
+
+cat("\n====================================================================\n")
+cat("   EVOLUCIÓN HISTÓRICA DE TASA DE OCUPACIÓN REAL (%) POR ÁREA (2016-2025)\n")
+cat("====================================================================\n")
+print(tabla_historica_area)
+
+
+# preferencias
+tabla_historica_formato <- base_atraccion_completa %>%
+  group_by(`modalidad`, `jornada`) %>%
+  summarise(
+    total_programas_activos = n_distinct(llave),
+    tasa_ocupacion_promedio = round(mean(tasa_ocupacion, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(tasa_ocupacion_promedio))
+
+cat("\n====================================================================\n")
+cat("   RENDIMIENTO HISTÓRICO POR MODALIDAD Y JORNADA (2016-2025)\n")
+cat("====================================================================\n")
+print(tabla_historica_formato)
+
+
+# top 30
+tabla_historica_ies <- base_atraccion_completa %>%
+  group_by(`clasificación institución nivel 3`, `nombre institución`) %>%
+  summarise(
+    total_programas_activos = n_distinct(llave),
+    tasa_ocupacion_promedio = round(mean(tasa_ocupacion, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(tasa_ocupacion_promedio))
+
+cat("\n====================================================================\n")
+cat("   RANKING DE OCUPACIÓN HISTÓRICA REAL POR INSTITUCIÓN (2016-2025)\n")
+cat("====================================================================\n")
+print(head(tabla_historica_ies, 30))
+```
+Tabla con informacion de los programas
+
+```{r, warning=FALSE}
+tab_tasaocupacion <- base_atraccion_completa %>%
+  select(
+    `nombre institución`,
+    `categoría de interés`,
+    `nombre carrera`,
+    año_num,
+    tasa_ocupacion
+  ) %>%
+  rename(
+    Institución = `nombre institución`,
+    `Área de Interés` = `categoría de interés`,
+    Programa = `nombre carrera`,
+    Año = año_num,
+    `Tasa Ocupación (%)` = tasa_ocupacion
+  ) %>%
+  arrange(Año, Institución, Programa)
+
+tabla_markdown_2 <- tab_tasaocupacion %>%
+  kbl(format = "markdown")
+
+writeLines(tabla_markdown, "tab_tasaocupacion.md")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
